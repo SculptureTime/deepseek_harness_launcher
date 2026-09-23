@@ -1,0 +1,29 @@
+101 ICON "dsh-tray-padded.ico"
+1 24 "dsh-tray.manifest"
+
+1 VERSIONINFO
+FILEVERSION 1,0,3,0
+PRODUCTVERSION 1,0,3,0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "080404B0"
+        BEGIN
+            VALUE "FileDescription", "DeepSeek Harness Launcher"
+            VALUE "FileVersion", "1.0.3"
+            VALUE "InternalName", "DeepSeek Harness Launcher"
+            VALUE "OriginalFilename", "DeepSeek Harness Launcher.exe"
+            VALUE "ProductName", "DeepSeek Harness Launcher"
+            VALUE "ProductVersion", "1.0.3"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0804, 1200
+    END
+END

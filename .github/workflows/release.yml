@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run launcher tests
+        shell: pwsh
+        run: |
+          .\tests\native-tray.tests.ps1
+          .\tests\dsh-tray.tests.ps1
+
+      - name: Enable MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build launcher
+        shell: cmd
+        run: |
+          cd native
+          rc /nologo /fo dsh-tray.res dsh-tray.rc
+          cl /nologo /W4 /O2 /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" dsh-tray.c dsh-tray.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            "DeepSeek Harness Launcher.exe#DeepSeek Harness Launcher.exe" `
+            --title "DeepSeek Harness Launcher $env:GITHUB_REF_NAME" `
+            --generate-notes
