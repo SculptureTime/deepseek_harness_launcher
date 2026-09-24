@@ -5,8 +5,8 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>
+#include <ws2ipdef.h>
 #include <iphlpapi.h>
-#include <tcpmib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>

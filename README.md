@@ -149,7 +149,7 @@ rc /nologo /fo dsh-tray.res dsh-tray.rc
 cl /nologo /W4 /O2 /MT /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" dsh-tray.c dsh-tray.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib
 ```
 
-正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.6`。
+正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.7`。
 
 ## License
 
