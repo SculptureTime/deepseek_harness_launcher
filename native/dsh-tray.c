@@ -510,7 +510,8 @@ static bool StartDsh(void) {
     STARTUPINFOW startup = {0};
     PROCESS_INFORMATION process = {0};
     startup.cb = sizeof(startup);
-    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
     startup.hStdOutput = out;
     startup.hStdError = err;
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
@@ -675,7 +676,12 @@ static void UpdateMenuState(void) {
 
     g_nid.uFlags = NIF_ICON | NIF_TIP | NIF_SHOWTIP;
     g_nid.hIcon = g_icon;
-    swprintf_s(g_nid.szTip, _countof(g_nid.szTip), running ? L"%s - 运行中（:%d）" : L"%s - 已停止（:%d）", APP_NAME, DSH_PORT);
+    const wchar_t *status = L"已停止";
+    if (g_operation == OP_RESTART) status = L"重启中";
+    else if (g_operation == OP_START || g_starting) status = L"启动中";
+    else if (g_operation == OP_STOP) status = L"停止中";
+    else if (running) status = L"运行中";
+    swprintf_s(g_nid.szTip, _countof(g_nid.szTip), L"%s - %s（:%d）", APP_NAME, status, DSH_PORT);
     Shell_NotifyIconW(NIM_MODIFY, &g_nid);
 
     if (g_last_running != -1) {
