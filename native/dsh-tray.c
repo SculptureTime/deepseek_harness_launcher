@@ -31,22 +31,6 @@
 
 static const int DSH_PORT = 3080;
 static const char *PATCH_CONTENT = "- id: tool-fs-search\r\n  config:\r\n    sampleOverCapGlobResults: false\r\n    timeoutMs: 120000\r\n";
-static const char *POWERSHELL_HIDE_PRELOAD =
-    "const cp = require('node:child_process');\r\n"
-    "const { syncBuiltinESMExports } = require('node:module');\r\n"
-    "const originalExecFileSync = cp.execFileSync;\r\n"
-    "const powershellNames = new Set(['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe']);\r\n"
-    "function hiddenOptions(options) {\r\n"
-    "  if (options && options.windowsHide === false) return options;\r\n"
-    "  return { ...(options || {}), windowsHide: true };\r\n"
-    "}\r\n"
-    "cp.execFileSync = function(file, args, options) {\r\n"
-    "  const name = String(file || '').replace(/^.*[\\\\/]/, '').toLowerCase();\r\n"
-    "  if (!powershellNames.has(name)) return originalExecFileSync.apply(this, arguments);\r\n"
-    "  if (Array.isArray(args)) return originalExecFileSync.call(this, file, args, hiddenOptions(options));\r\n"
-    "  return originalExecFileSync.call(this, file, hiddenOptions(args));\r\n"
-    "};\r\n"
-    "syncBuiltinESMExports();\r\n";
 static const wchar_t *RUN_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 static const wchar_t *RUN_VALUE = L"DeepSeek Harness Launcher";
 static const wchar_t *LEGACY_RUN_VALUE = L"DeepSeek Harness";
@@ -71,7 +55,6 @@ static wchar_t g_log_out[MAX_PATH];
 static wchar_t g_log_err[MAX_PATH];
 static wchar_t g_state_file[MAX_PATH];
 static wchar_t g_patch_file[MAX_PATH];
-static wchar_t g_preload_file[MAX_PATH];
 static wchar_t g_node_path[MAX_PATH];
 static wchar_t g_dsh_command[MAX_PATH];
 static UINT g_taskbar_created;
@@ -100,18 +83,11 @@ static void InitPaths(void) {
     CreateDirectoryW(state_dir, NULL);
     swprintf_s(g_state_file, _countof(g_state_file), L"%s\\dsh.pid", state_dir);
     swprintf_s(g_patch_file, _countof(g_patch_file), L"%s\\dsh-tool-timeout.patch.yml", state_dir);
-    swprintf_s(g_preload_file, _countof(g_preload_file), L"%s\\hide-powershell-console.cjs", state_dir);
     HANDLE patch = CreateFileW(g_patch_file, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (patch != INVALID_HANDLE_VALUE) {
         DWORD written = 0;
         WriteFile(patch, PATCH_CONTENT, (DWORD) strlen(PATCH_CONTENT), &written, NULL);
         CloseHandle(patch);
-    }
-    HANDLE preload = CreateFileW(g_preload_file, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (preload != INVALID_HANDLE_VALUE) {
-        DWORD written = 0;
-        WriteFile(preload, POWERSHELL_HIDE_PRELOAD, (DWORD) strlen(POWERSHELL_HIDE_PRELOAD), &written, NULL);
-        CloseHandle(preload);
     }
 }
 
@@ -451,16 +427,6 @@ static void ApplyChildEnvironment(void) {
     swprintf_s(merged, _countof(merged), L"%s;%s", node_dir, current);
     SetEnvironmentVariableW(L"Path", merged);
     SetEnvironmentVariableW(L"NO_PROXY", L"127.0.0.1,localhost");
-
-    wchar_t existing_node_options[4096] = {0};
-    wchar_t node_options[8192] = {0};
-    GetEnvironmentVariableW(L"NODE_OPTIONS", existing_node_options, _countof(existing_node_options));
-    if (existing_node_options[0]) {
-        swprintf_s(node_options, _countof(node_options), L"%s --require=\"%s\"", existing_node_options, g_preload_file);
-    } else {
-        swprintf_s(node_options, _countof(node_options), L"--require=\"%s\"", g_preload_file);
-    }
-    SetEnvironmentVariableW(L"NODE_OPTIONS", node_options);
 }
 
 static void ConfigureChildProxy(void) {

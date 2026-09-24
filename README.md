@@ -139,15 +139,17 @@ pwsh -NoProfile -File .\tests\dsh-tray.tests.ps1
 
 ## 编译
 
-正式构建使用 Zig `0.16.0`，与已验证可用的本地版本保持同一构建链。
+正式构建使用 Microsoft Visual C++（MSVC），与已验证可正常启动的本地版本保持同一编译器链。
 
-```powershell
+在 x64 Native Tools Command Prompt 中执行：
+
+```bat
 cd native
-zig rc -nologo -fo dsh-tray.res dsh-tray.rc
-zig cc -target x86_64-windows-gnu -DUNICODE -D_UNICODE -municode -static '-Wl,--subsystem,windows' -o '..\DeepSeek Harness Launcher.exe' dsh-tray.c dsh-tray.res -lws2_32 -lshell32 -ladvapi32 -liphlpapi
+rc /nologo /fo dsh-tray.res dsh-tray.rc
+cl /nologo /W4 /O2 /MT /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" dsh-tray.c dsh-tray.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib
 ```
 
-正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.4`。
+正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.5`。
 
 ## License
 
