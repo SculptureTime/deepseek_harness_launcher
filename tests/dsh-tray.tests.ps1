@@ -8,6 +8,7 @@ function Assert-Equal($Expected, $Actual, [string]$Message) {
 
 # A DSH Web process that owns the configured port must still be recognized even
 # when the in-memory tracked PID has been lost.
+$startCommand = @('node', '--import', 'tsx/esm', 'apps/cli/src/bin.ts', 'web', '--port', $port)
 $launcher = Get-Command $startCommand[0] -CommandType Application -ErrorAction SilentlyContinue
 $mockExecutablePath = if ($launcher) { $launcher.Path } else { [string]$startCommand[0] }
 function Get-CimInstance {
@@ -15,7 +16,7 @@ function Get-CimInstance {
         ProcessId = 4242
         Name = 'node.exe'
         ExecutablePath = $mockExecutablePath
-        CommandLine = '"' + $startCommand[0] + '" "' + $startCommand[1] + '" web --port ' + $port + ' --no-open'
+        CommandLine = [string]::Join(' ', [string[]]$startCommand) + ' --no-open'
     }
 }
 $script:trackedPid = 0
