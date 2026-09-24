@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-$source = Get-Content (Join-Path $PSScriptRoot '..\native\dsh-tray.c') -Raw
-$resource = Get-Content (Join-Path $PSScriptRoot '..\native\dsh-tray.rc') -Raw
+$source = Get-Content (Join-Path $PSScriptRoot '..\native\launcher.c') -Raw
+$resource = Get-Content (Join-Path $PSScriptRoot '..\native\launcher.rc') -Raw
 $release = Get-Content (Join-Path $PSScriptRoot '..\.github\workflows\release.yml') -Raw
 
 function Assert-Contains([string]$Text, [string]$Expected, [string]$Message) {
@@ -56,11 +56,11 @@ Assert-Contains $source 'const wchar_t *status = L"已停止";' 'Stopped tooltip
 Assert-Contains $source 'L"%s - %s（:%d）"' 'Tray tooltip should format the application name, operation state and service port.'
 Assert-Contains $resource 'VALUE "FileDescription", "DeepSeek Harness Launcher"' 'Executable metadata should use the unified launcher application name.'
 Assert-Contains $resource 'VALUE "ProductName", "DeepSeek Harness Launcher"' 'Executable product name should use the unified launcher application name.'
-Assert-Contains $resource 'VALUE "FileVersion", "1.0.15"' 'Executable metadata should match release version 1.0.15.'
+Assert-Contains $resource 'VALUE "FileVersion", "1.0.16"' 'Executable metadata should match release version 1.0.16.'
 Assert-Contains $source 'L"DeepSeek Harness Launcher 已就绪，右键图标可进行控制。"' 'Ready notification should use the unified launcher application name.'
 Assert-NotContains $source 'L"DeepSeek Harness 已就绪，右键图标可进行控制。"' 'Ready notification must not expose the legacy application name.'
 Assert-Contains $release 'ilammy/msvc-dev-cmd@v1' 'Release build must initialize the MSVC toolchain used by the working launcher.'
-Assert-Contains $release 'rc /nologo /fo dsh-tray.res dsh-tray.rc' 'Release build must compile Windows resources with rc.'
+Assert-Contains $release 'rc /nologo /fo launcher.res launcher.rc' 'Release build must compile Windows resources with rc.'
 Assert-Contains $release 'cl /nologo /W4 /O2 /MT /utf-8' 'Release build must use MSVC with the static runtime and compile Chinese source as UTF-8.'
 Assert-Contains $release '/SUBSYSTEM:WINDOWS' 'Release build must produce a Windows GUI executable without a console window.'
 Assert-NotContains $release 'zig cc' 'Release must not switch back to the GNU ABI build that failed to launch DSH.'
@@ -70,4 +70,4 @@ Assert-Contains $release 'Launcher failed to start fake DSH on port 3080.' 'Rele
 Assert-Contains $release 'Launcher startup must not create a cmd.exe child' 'Release must verify direct startup does not create the console wrapper that can flash.'
 Assert-NotContains $release '-lt 500KB' 'Release validation must not assume the legacy executable size.'
 
-Write-Host 'native tray tests passed.'
+Write-Host 'launcher tests passed.'

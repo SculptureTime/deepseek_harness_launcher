@@ -1,14 +1,11 @@
 node_modules/
 *.log
 .DS_Store
-# User config (git-ignored; copy dsh-tray.config.example.ps1 to this name)
-assets/dsh-tray.config.ps1
-# Local/generated files
-NUL
-diagnostics/
-assets/dsh-tool-timeout.patch.yml
 
-# Native tray build outputs
+# Local/generated files
+diagnostics/
+
+# Native launcher build outputs
 *.exe
 *.pdb
 native/*.res

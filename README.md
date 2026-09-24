@@ -96,8 +96,8 @@ Launcher 会自动常驻系统托盘。
 Launcher 日志位于当前用户临时目录：
 
 ```text
-%TEMP%\dsh-tray.out.log
-%TEMP%\dsh-tray.err.log
+%TEMP%\deepseek-harness-launcher.out.log
+%TEMP%\deepseek-harness-launcher.err.log
 ```
 
 运行状态文件及 Launcher 生成的本地辅助文件位于：
@@ -110,31 +110,21 @@ Launcher 日志位于当前用户临时目录：
 
 ```text
 native/
-  dsh-tray.c               原生 Launcher 主程序
-  dsh-tray.rc              Windows 资源与版本信息
-  dsh-tray.manifest        应用 manifest
-  dsh-tray-padded.ico      EXE / 托盘图标
+  launcher.c               原生 Launcher 主程序
+  launcher.rc              Windows 资源与版本信息
+  launcher.manifest        应用 manifest
+  launcher.ico             EXE / 托盘图标
 
 tests/
-  native-tray.tests.ps1    原生 Launcher 回归测试
-assets/
-  dsh-tray.ps1             早期 PowerShell 实现，保留作历史兼容参考
+  launcher.tests.ps1       回归测试
 ```
-
-当前正式版本以 `native/dsh-tray.c` 为准。
 
 ## 本地测试
 
 使用 PowerShell 7：
 
 ```powershell
-pwsh -NoProfile -File .\tests\native-tray.tests.ps1
-```
-
-如需同时验证早期 PowerShell 版本：
-
-```powershell
-pwsh -NoProfile -File .\tests\dsh-tray.tests.ps1
+pwsh -NoProfile -File .\tests\launcher.tests.ps1
 ```
 
 ## 编译
@@ -145,11 +135,11 @@ pwsh -NoProfile -File .\tests\dsh-tray.tests.ps1
 
 ```bat
 cd native
-rc /nologo /fo dsh-tray.res dsh-tray.rc
-cl /nologo /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" dsh-tray.c dsh-tray.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib user32.lib
+rc /nologo /fo launcher.res launcher.rc
+cl /nologo /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" launcher.c launcher.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib user32.lib
 ```
 
-正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.15`。
+正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.16`。
 
 ## License
 

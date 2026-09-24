@@ -79,8 +79,8 @@ static void InitPaths(void) {
     wchar_t temp[MAX_PATH] = {0};
     wchar_t local[MAX_PATH] = {0};
     GetTempPathW(_countof(temp), temp);
-    swprintf_s(g_log_out, _countof(g_log_out), L"%sdsh-tray.out.log", temp);
-    swprintf_s(g_log_err, _countof(g_log_err), L"%sdsh-tray.err.log", temp);
+    swprintf_s(g_log_out, _countof(g_log_out), L"%sdeepseek-harness-launcher.out.log", temp);
+    swprintf_s(g_log_err, _countof(g_log_err), L"%sdeepseek-harness-launcher.err.log", temp);
     if (!GetEnvironmentVariableW(L"LOCALAPPDATA", local, _countof(local))) {
         GetTempPathW(_countof(local), local);
     }
@@ -1091,18 +1091,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
     (void) previous;
     (void) show_command;
 
-    HANDLE mutex = CreateMutexW(NULL, TRUE, L"Local\\DSHTrayNative");
+    HANDLE mutex = CreateMutexW(NULL, TRUE, L"Local\\DSHLauncher");
     bool already_running = mutex && GetLastError() == ERROR_ALREADY_EXISTS;
     if (already_running && command_line && wcsstr(command_line, L"--replace")) {
         CloseHandle(mutex);
         mutex = NULL;
-        HWND existing = FindWindowW(L"DSHTrayNativeWindow", NULL);
+        HWND existing = FindWindowW(L"DSHLauncherWindow", NULL);
         if (existing) {
             PostMessageW(existing, WM_CLOSE, 0, 0);
         }
         for (int i = 0; i < 50; i++) {
             Sleep(100);
-            mutex = CreateMutexW(NULL, TRUE, L"Local\\DSHTrayNative");
+            mutex = CreateMutexW(NULL, TRUE, L"Local\\DSHLauncher");
             already_running = mutex && GetLastError() == ERROR_ALREADY_EXISTS;
             if (mutex && !already_running) {
                 break;
@@ -1114,7 +1114,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
         }
     }
     if (already_running) {
-        HWND existing = FindWindowW(L"DSHTrayNativeWindow", NULL);
+        HWND existing = FindWindowW(L"DSHLauncherWindow", NULL);
         if (existing) {
             PostMessageW(existing, WM_ACTIVATE_INSTANCE, 0, 0);
         }
@@ -1140,16 +1140,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
     LoadTrackedProcess();
     ApplyChildEnvironment();
     RemoveLegacyDesktopShortcut();
-    // 桌面改为直接使用 DeepSeek Harness Launcher.exe 后，清理旧的 dsh-tray.exe。
-    wchar_t desktop[MAX_PATH] = {0};
-    wchar_t current_exe[MAX_PATH] = {0};
-    wchar_t legacy_exe[MAX_PATH] = {0};
-    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, SHGFP_TYPE_CURRENT, desktop)) && GetModuleFileNameW(NULL, current_exe, _countof(current_exe))) {
-        swprintf_s(legacy_exe, _countof(legacy_exe), L"%s\\dsh-tray.exe", desktop);
-        if (_wcsicmp(legacy_exe, current_exe) != 0) {
-            DeleteFileW(legacy_exe);
-        }
-    }
     if (IsLaunchAtLoginEnabled()) {
         SetLaunchAtLogin(true);
     }
@@ -1163,7 +1153,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
     window_class.hInstance = instance;
     window_class.hIcon = g_icon;
     window_class.hIconSm = g_icon;
-    window_class.lpszClassName = L"DSHTrayNativeWindow";
+    window_class.lpszClassName = L"DSHLauncherWindow";
     if (!RegisterClassExW(&window_class)) {
         WSACleanup();
         CloseHandle(mutex);
