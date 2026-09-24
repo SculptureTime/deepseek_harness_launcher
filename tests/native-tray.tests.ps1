@@ -39,7 +39,7 @@ Assert-Contains $source 'L"%s - 已停止（:%d）"' 'Stopped tooltip should exp
 Assert-Contains $source 'APP_NAME, DSH_PORT' 'Tray tooltip should format the unified application name with the service port.'
 Assert-Contains $resource 'VALUE "FileDescription", "DeepSeek Harness Launcher"' 'Executable metadata should use the unified launcher application name.'
 Assert-Contains $resource 'VALUE "ProductName", "DeepSeek Harness Launcher"' 'Executable product name should use the unified launcher application name.'
-Assert-Contains $resource 'VALUE "FileVersion", "1.0.5"' 'Executable metadata should match release version 1.0.5.'
+Assert-Contains $resource 'VALUE "FileVersion", "1.0.6"' 'Executable metadata should match release version 1.0.6.'
 Assert-Contains $source 'L"DeepSeek Harness Launcher 已就绪，右键图标可进行控制。"' 'Ready notification should use the unified launcher application name.'
 Assert-NotContains $source 'L"DeepSeek Harness 已就绪，右键图标可进行控制。"' 'Ready notification must not expose the legacy application name.'
 Assert-Contains $release 'ilammy/msvc-dev-cmd@v1' 'Release build must initialize the MSVC toolchain used by the working launcher.'
