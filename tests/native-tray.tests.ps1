@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $source = Get-Content (Join-Path $PSScriptRoot '..\native\dsh-tray.c') -Raw
 $resource = Get-Content (Join-Path $PSScriptRoot '..\native\dsh-tray.rc') -Raw
+$release = Get-Content (Join-Path $PSScriptRoot '..\.github\workflows\release.yml') -Raw
 
 function Assert-Contains([string]$Text, [string]$Expected, [string]$Message) {
     if (-not $Text.Contains($Expected)) { throw "$Message`nMissing: $Expected" }
@@ -39,5 +40,15 @@ Assert-Contains $source 'L"%s - 已停止（:%d）"' 'Stopped tooltip should exp
 Assert-Contains $source 'APP_NAME, DSH_PORT' 'Tray tooltip should format the unified application name with the service port.'
 Assert-Contains $resource 'VALUE "FileDescription", "DeepSeek Harness Launcher"' 'Executable metadata should use the unified launcher application name.'
 Assert-Contains $resource 'VALUE "ProductName", "DeepSeek Harness Launcher"' 'Executable product name should use the unified launcher application name.'
+Assert-Contains $source 'L"DeepSeek Harness Launcher 已就绪，右键图标可进行控制。"' 'Ready notification should use the unified launcher application name.'
+Assert-NotContains $source 'L"DeepSeek Harness 已就绪，右键图标可进行控制。"' 'Ready notification must not expose the legacy application name.'
+Assert-Contains $release 'mlugg/setup-zig@v2' 'Release build must use the same Zig toolchain family as the working portable executable.'
+Assert-Contains $release 'version: 0.16.0' 'Release build must pin the known-good Zig version.'
+Assert-Contains $release '-target x86_64-windows-gnu' 'Release build must target the same Windows GNU ABI as the working executable.'
+Assert-Contains $release '-Wl,--subsystem,windows' 'Release build must produce a Windows GUI executable without a console window.'
+Assert-Contains $release '-static' 'Release build must remain a portable static executable.'
+Assert-NotContains $release 'cl /nologo' 'Release must not switch back to the unrelated MSVC build chain.'
+Assert-Contains $release 'Compress-Archive' 'Release should package the launcher so the exact spaced EXE filename is preserved.'
+Assert-Contains $release 'DeepSeek-Harness-Launcher.zip' 'Release archive should use a GitHub-safe filename.'
 
 Write-Host 'native tray tests passed.'

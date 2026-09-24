@@ -948,7 +948,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
         g_start_notify_pending = StartDsh();
         if (!g_start_notify_pending) g_operation = OP_NONE;
     } else {
-        ShowBalloon(APP_NAME, L"DeepSeek Harness 已就绪，右键图标可进行控制。", NIIF_INFO);
+        ShowBalloon(APP_NAME, L"DeepSeek Harness Launcher 已就绪，右键图标可进行控制。", NIIF_INFO);
     }
     UpdateMenuState();
 

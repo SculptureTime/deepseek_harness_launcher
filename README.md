@@ -35,7 +35,9 @@ DeepSeek Harness Web 的 Windows 原生启动器。单 EXE 运行，无需安装
 
 https://github.com/SculptureTime/deepseek_harness_launcher/releases/latest
 
-下载 `DeepSeek Harness Launcher.exe` 后即可运行，不需要安装。
+下载 `DeepSeek-Harness-Launcher.zip`，解压后得到 `DeepSeek Harness Launcher.exe`，双击即可运行，不需要安装。
+
+> GitHub 会自动清洗 Release 资产文件名中的空格，因此正式发布使用 ZIP，确保压缩包内的 EXE 始终保持精确文件名 `DeepSeek Harness Launcher.exe`。
 
 ## 环境要求
 
@@ -137,17 +139,15 @@ pwsh -NoProfile -File .\tests\dsh-tray.tests.ps1
 
 ## 编译
 
-需要安装 Visual Studio / Build Tools，并包含 **Desktop development with C++**。
+正式构建使用 Zig `0.16.0`，与已验证可用的本地版本保持同一构建链。
 
-在 x64 Native Tools Command Prompt 中执行：
-
-```bat
+```powershell
 cd native
-rc /nologo /fo dsh-tray.res dsh-tray.rc
-cl /nologo /W4 /O2 /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" dsh-tray.c dsh-tray.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib
+zig rc -nologo -fo dsh-tray.res dsh-tray.rc
+zig cc -target x86_64-windows-gnu -DUNICODE -D_UNICODE -municode -static -Wl,--subsystem,windows -o '..\DeepSeek Harness Launcher.exe' dsh-tray.c dsh-tray.res -lws2_32 -lshell32 -ladvapi32 -liphlpapi
 ```
 
-正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.3`。
+正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.4`。
 
 ## License
 
