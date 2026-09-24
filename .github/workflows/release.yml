@@ -32,11 +32,45 @@ jobs:
           rc /nologo /fo dsh-tray.res dsh-tray.rc
           cl /nologo /W4 /O2 /MT /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" dsh-tray.c dsh-tray.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib user32.lib
 
+      - name: Smoke test launcher startup
+        shell: pwsh
+        run: |
+          $smokeDir = Join-Path $env:RUNNER_TEMP 'dsh-launcher-smoke'
+          New-Item -ItemType Directory -Path $smokeDir -Force | Out-Null
+          $node = (Get-Command node.exe -ErrorAction Stop).Source
+          $fakeJs = Join-Path $smokeDir 'fake-dsh.js'
+          @'
+          const net = require('node:net')
+          const server = net.createServer()
+          server.listen(3080, '127.0.0.1')
+          setInterval(() => {}, 1000)
+          '@ | Set-Content -Path $fakeJs -Encoding ascii
+          $fakeCmd = Join-Path $smokeDir 'dsh.cmd'
+          "@`"$node`" `"$fakeJs`" %*" | Set-Content -Path $fakeCmd -Encoding ascii
+          $env:PATH = "$smokeDir;$env:PATH"
+          $launcher = Start-Process -FilePath '.\DeepSeek Harness Launcher.exe' -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              Start-Sleep -Milliseconds 500
+              try {
+                $client = [Net.Sockets.TcpClient]::new('127.0.0.1', 3080)
+                $client.Dispose()
+                $ready = $true
+                break
+              } catch {}
+            }
+            if (-not $ready) { throw 'Launcher failed to start fake DSH on port 3080.' }
+          } finally {
+            if (-not $launcher.HasExited) { Stop-Process -Id $launcher.Id -Force }
+            Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$fakeJs*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          }
+
       - name: Validate and package launcher
         shell: pwsh
         run: |
           $exe = Get-Item 'DeepSeek Harness Launcher.exe'
-          if ($exe.Length -lt 500KB) { throw "Unexpected launcher size: $($exe.Length) bytes" }
+          if ($exe.Length -lt 150KB) { throw "Unexpected launcher size: $($exe.Length) bytes" }
           if ($exe.VersionInfo.FileDescription -ne 'DeepSeek Harness Launcher') { throw 'Unexpected FileDescription' }
           if ($exe.VersionInfo.ProductName -ne 'DeepSeek Harness Launcher') { throw 'Unexpected ProductName' }
           if ($exe.VersionInfo.OriginalFilename -ne 'DeepSeek Harness Launcher.exe') { throw 'Unexpected OriginalFilename' }
