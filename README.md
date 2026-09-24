@@ -26,7 +26,7 @@ DeepSeek Harness Web 的 Windows 原生启动器。单 EXE 运行，无需安装
 - 自动识别 `dsh.cmd`
 - 自动选择兼容的 Node.js
 - 自动读取 Windows 当前代理设置并传递给 DSH 子进程
-- 隐藏 DSH/插件间接启动 PowerShell 时产生的黑色控制台窗口
+- 拦截并隐藏 DSH 及其插件（如 agy / Antigravity）子进程新建的控制台窗口（仅限本进程树）
 - 支持开机自启动，并自动迁移旧的注册表启动项名称
 
 ## 下载
@@ -149,7 +149,7 @@ rc /nologo /fo dsh-tray.res dsh-tray.rc
 cl /nologo /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" dsh-tray.c dsh-tray.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib user32.lib
 ```
 
-正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.11`。
+正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.15`。
 
 ## License
 

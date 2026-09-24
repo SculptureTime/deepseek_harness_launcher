@@ -7,6 +7,7 @@
 #include <shlobj.h>
 #include <ws2ipdef.h>
 #include <iphlpapi.h>
+#include <tlhelp32.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -60,6 +61,9 @@ static wchar_t g_node_path[MAX_PATH];
 static wchar_t g_dsh_command[MAX_PATH];
 static wchar_t g_dsh_script[MAX_PATH];
 static UINT g_taskbar_created;
+static HWINEVENTHOOK g_console_hook;
+static DWORD g_self_pid;
+static DWORD g_owner_pid;
 
 static void ShowBalloon(const wchar_t *title, const wchar_t *message, DWORD flags) {
     (void) flags;
@@ -538,6 +542,10 @@ static bool StartDsh(void) {
     startup.hStdOutput = out;
     startup.hStdError = err;
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    // CREATE_NO_WINDOW, deliberately: it gives the server a console that has no
+    // window at all, and descendants inherit it without ever flashing. A
+    // descendant that drops that console instead is handled by the console
+    // window catcher below.
     BOOL started = CreateProcessW(application, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &startup, &process);
     CloseHandle(out);
     CloseHandle(err);
@@ -656,6 +664,246 @@ static void RemoveLegacyDesktopShortcut(void) {
     }
 }
 
+/** Parent process id of one pid, or 0 when it cannot be read. */
+static DWORD ParentProcessId(DWORD pid) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    PROCESSENTRY32W entry = {0};
+    entry.dwSize = sizeof(entry);
+    DWORD parent = 0;
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            if (entry.th32ProcessID == pid) {
+                parent = entry.th32ParentProcessID;
+                break;
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return parent;
+}
+
+/**
+ * Whether one process is this tray, a server it launched, or a descendant of
+ * either. Four roots are checked because a server can also be adopted rather
+ * than launched: the tracked pid survives a tray restart, and the current port
+ * owner covers a server started by an earlier tray instance.
+ */
+static bool IsServerProcess(DWORD pid) {
+    if (!pid) {
+        return false;
+    }
+    const DWORD roots[4] = {g_self_pid, g_launch_pid, g_tracked_pid, g_owner_pid};
+    for (int hop = 0; hop < 32; hop++) {
+        for (int root = 0; root < 4; root++) {
+            if (roots[root] && pid == roots[root]) {
+                return true;
+            }
+        }
+        DWORD parent = ParentProcessId(pid);
+        if (!parent || parent == pid) {
+            return false;
+        }
+        pid = parent;
+    }
+    return false;
+}
+
+/** One process-table row: identity, parent, and image basename. */
+typedef struct {
+    DWORD pid;
+    DWORD parent;
+    wchar_t name[MAX_PATH];
+} ProcessRow;
+
+/** Snapshot the process table into a heap array the caller frees. */
+static bool ReadProcessTable(ProcessRow **rows_out, DWORD *count_out) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    DWORD capacity = 1024;
+    DWORD count = 0;
+    ProcessRow *rows = (ProcessRow *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, capacity * sizeof(ProcessRow));
+    if (!rows) {
+        CloseHandle(snapshot);
+        return false;
+    }
+    PROCESSENTRY32W entry = {0};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            if (count == capacity) {
+                DWORD grown = capacity * 2;
+                ProcessRow *bigger = (ProcessRow *) HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, grown * sizeof(ProcessRow));
+                if (!bigger) {
+                    break;
+                }
+                CopyMemory(bigger, rows, count * sizeof(ProcessRow));
+                HeapFree(GetProcessHeap(), 0, rows);
+                rows = bigger;
+                capacity = grown;
+            }
+            rows[count].pid = entry.th32ProcessID;
+            rows[count].parent = entry.th32ParentProcessID;
+            wcsncpy_s(rows[count].name, _countof(rows[count].name), entry.szExeFile, _TRUNCATE);
+            count++;
+            entry.dwSize = sizeof(entry);
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    *rows_out = rows;
+    *count_out = count;
+    return true;
+}
+
+/** Whether one pid is a tree root, for a walk that already holds a snapshot. */
+static bool IsTreeRoot(DWORD pid) {
+    return pid == g_self_pid || pid == g_launch_pid || pid == g_tracked_pid || pid == g_owner_pid;
+}
+
+/**
+ * Whether a window title names a process in this launcher's own tree.
+ *
+ * When Windows delegates new consoles to a terminal application, the console's
+ * window belongs to the TERMINAL process, not to the client that opened it, so
+ * the ancestry test can never match it. The terminal does title that window with
+ * the client's image path (observed: the bare path of agy.exe), which is the one
+ * link back to our tree -- and the reason this test exists.
+ *
+ * Only an exact match counts, and only against a process whose ancestry reaches
+ * a tree root, so an operator's own terminal window is never touched.
+ */
+static bool TreeOwnsImagePath(const wchar_t *title) {
+    wchar_t path[MAX_PATH] = {0};
+    wcsncpy_s(path, _countof(path), title, _TRUNCATE);
+    wchar_t *start = path;
+    while (*start == L' ' || *start == L'\t') {
+        start++;
+    }
+    size_t length = wcslen(start);
+    while (length && (start[length - 1] == L' ' || start[length - 1] == L'\t')) {
+        start[--length] = L'\0';
+    }
+    const wchar_t *base = wcsrchr(start, L'\\');
+    if (!base || !base[1]) {
+        return false;
+    }
+    base++;
+
+    ProcessRow *rows = NULL;
+    DWORD count = 0;
+    if (!ReadProcessTable(&rows, &count)) {
+        return false;
+    }
+    bool owned = false;
+    for (DWORD i = 0; i < count && !owned; i++) {
+        if (_wcsicmp(rows[i].name, base) != 0) {
+            continue;
+        }
+        DWORD pid = rows[i].pid;
+        bool ours = false;
+        for (int hop = 0; hop < 32 && !ours; hop++) {
+            if (IsTreeRoot(pid)) {
+                ours = true;
+                break;
+            }
+            DWORD parent = 0;
+            for (DWORD j = 0; j < count; j++) {
+                if (rows[j].pid == pid) {
+                    parent = rows[j].parent;
+                    break;
+                }
+            }
+            if (!parent || parent == pid) {
+                break;
+            }
+            pid = parent;
+        }
+        if (!ours) {
+            continue;
+        }
+        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, rows[i].pid);
+        if (process) {
+            wchar_t image[MAX_PATH] = {0};
+            DWORD size = _countof(image);
+            if (QueryFullProcessImageNameW(process, 0, image, &size) && _wcsicmp(image, start) == 0) {
+                owned = true;
+            }
+            CloseHandle(process);
+        }
+    }
+    HeapFree(GetProcessHeap(), 0, rows);
+    return owned;
+}
+
+/**
+ * Hide one console window, but only when it belongs to this launcher's own
+ * process tree.
+ *
+ * The server is started with CREATE_NO_WINDOW, which already gives it a console
+ * with no window; descendants inherit that and cannot flash. A descendant that
+ * loses the console instead -- DETACHED_PROCESS, an explicit CREATE_NEW_CONSOLE,
+ * a "start" command, or any spawn that switches token -- allocates a brand new
+ * console, and no creation flag on our side can suppress a window we do not own.
+ * Catching the window as it is created is the only reliable place to stop it.
+ *
+ * Two shapes are handled, because the console host decides which one appears:
+ * a classic console window belongs to the client itself (the ancestry test
+ * matches), while a delegated terminal hosts it under its own process (the title
+ * test matches). Windows with any other class, and console windows belonging to
+ * anything outside our tree, are left alone.
+ */
+static void HideForeignConsoleWindow(HWND hwnd) {
+    wchar_t class_name[64] = {0};
+    if (!GetClassNameW(hwnd, class_name, _countof(class_name))) {
+        return;
+    }
+    bool console_host = _wcsicmp(class_name, L"ConsoleWindowClass") == 0;
+    bool delegated = _wcsicmp(class_name, L"CASCADIA_HOSTING_WINDOW_CLASS") == 0;
+    if (!console_host && !delegated) {
+        return;
+    }
+    if (console_host) {
+        DWORD owner = 0;
+        GetWindowThreadProcessId(hwnd, &owner);
+        if (!IsServerProcess(owner)) {
+            return;
+        }
+        ShowWindow(hwnd, SW_HIDE);
+        return;
+    }
+    wchar_t title[512] = {0};
+    if (!GetWindowTextW(hwnd, title, _countof(title))) {
+        return;
+    }
+    if (!TreeOwnsImagePath(title)) {
+        return;
+    }
+    ShowWindow(hwnd, SW_HIDE);
+}
+
+/** WinEvent sink: hide a console window the moment it identifies as ours. */
+static void CALLBACK ConsoleWindowEvent(HWINEVENTHOOK hook, DWORD event, HWND hwnd,
+                                        LONG id_object, LONG id_child, DWORD thread, DWORD time) {
+    (void) hook;
+    (void) thread;
+    (void) time;
+    if (id_object != OBJID_WINDOW || id_child != CHILDID_SELF) {
+        return;
+    }
+    // NAMECHANGE matters: a delegated terminal shows its window while the title
+    // is still the terminal's own name, and only names the console's client
+    // afterwards. That rename is the first moment the window can be attributed
+    // to our tree, so it is also the moment to hide it.
+    if (event != EVENT_OBJECT_CREATE && event != EVENT_OBJECT_SHOW && event != EVENT_OBJECT_NAMECHANGE) {
+        return;
+    }
+    HideForeignConsoleWindow(hwnd);
+}
+
 static void AddTrayIcon(void) {
     ZeroMemory(&g_nid, sizeof(g_nid));
     g_nid.cbSize = sizeof(g_nid);
@@ -673,6 +921,7 @@ static void AddTrayIcon(void) {
 
 static void UpdateMenuState(void) {
     DWORD owner = GetPortOwnerPid();
+    g_owner_pid = owner;
     bool running = owner != 0;
     if (running) {
         g_starting = false;
@@ -826,6 +1075,10 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPAR
         }
         case WM_DESTROY:
             KillTimer(hwnd, TIMER_STATUS);
+            if (g_console_hook) {
+                UnhookWinEvent(g_console_hook);
+                g_console_hook = NULL;
+            }
             Shell_NotifyIconW(NIM_DELETE, &g_nid);
             PostQuitMessage(0);
             return 0;
@@ -938,6 +1191,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
 
     AddTrayIcon();
     SetTimer(g_hwnd, TIMER_STATUS, 3000, NULL);
+    g_self_pid = GetCurrentProcessId();
+    g_console_hook = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_NAMECHANGE, NULL,
+                                     ConsoleWindowEvent, 0, 0, WINEVENT_OUTOFCONTEXT);
     if (!GetPortOwnerPid()) {
         g_operation = OP_START;
         ShowBalloon(APP_NAME, L"正在启动 DSH 服务……", NIIF_INFO);
