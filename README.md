@@ -144,7 +144,7 @@ pwsh -NoProfile -File .\tests\dsh-tray.tests.ps1
 ```powershell
 cd native
 zig rc -nologo -fo dsh-tray.res dsh-tray.rc
-zig cc -target x86_64-windows-gnu -DUNICODE -D_UNICODE -municode -static -Wl,--subsystem,windows -o '..\DeepSeek Harness Launcher.exe' dsh-tray.c dsh-tray.res -lws2_32 -lshell32 -ladvapi32 -liphlpapi
+zig cc -target x86_64-windows-gnu -DUNICODE -D_UNICODE -municode -static '-Wl,--subsystem,windows' -o '..\DeepSeek Harness Launcher.exe' dsh-tray.c dsh-tray.res -lws2_32 -lshell32 -ladvapi32 -liphlpapi
 ```
 
 正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.4`。
