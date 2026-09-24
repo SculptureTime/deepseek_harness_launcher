@@ -26,6 +26,8 @@ Assert-Contains $source 'CMD_RESTART, MF_BYCOMMAND | (!operation_busy && running
 Assert-NotContains $source 'D:\\\\dev\\\\nvm\\\\installs\\\\v24.11.1\\\\node.exe' "Portable tray must not hard-code one machine's Node path."
 Assert-NotContains $source 'http://127.0.0.1:7890' 'Portable tray must not hard-code a proxy port.'
 Assert-Contains $source 'SearchPathW(NULL, L"dsh.cmd"' 'Portable tray should resolve the installed DSH command from PATH.'
+Assert-Contains $source 'static wchar_t g_dsh_script[MAX_PATH];' 'Launcher should resolve the DSH JavaScript entry point for direct Node startup.'
+Assert-Contains $source 'const wchar_t *application = g_node_path;' 'Launcher should prefer direct Node startup to avoid a console wrapper.'
 Assert-Contains $source 'ProxyServer' 'Portable tray should read the current Windows proxy settings.'
 Assert-Contains $source 'WM_ACTIVATE_INSTANCE' 'A second launch should activate the existing tray instance.'
 Assert-Contains $source 'PostMessageW(existing, WM_ACTIVATE_INSTANCE' 'A second launch should ask the existing tray to open the Web UI instead of starting another instance.'
@@ -44,7 +46,7 @@ Assert-Contains $source 'const wchar_t *status = L"已停止";' 'Stopped tooltip
 Assert-Contains $source 'L"%s - %s（:%d）"' 'Tray tooltip should format the application name, operation state and service port.'
 Assert-Contains $resource 'VALUE "FileDescription", "DeepSeek Harness Launcher"' 'Executable metadata should use the unified launcher application name.'
 Assert-Contains $resource 'VALUE "ProductName", "DeepSeek Harness Launcher"' 'Executable product name should use the unified launcher application name.'
-Assert-Contains $resource 'VALUE "FileVersion", "1.0.10"' 'Executable metadata should match release version 1.0.10.'
+Assert-Contains $resource 'VALUE "FileVersion", "1.0.11"' 'Executable metadata should match release version 1.0.11.'
 Assert-Contains $source 'L"DeepSeek Harness Launcher 已就绪，右键图标可进行控制。"' 'Ready notification should use the unified launcher application name.'
 Assert-NotContains $source 'L"DeepSeek Harness 已就绪，右键图标可进行控制。"' 'Ready notification must not expose the legacy application name.'
 Assert-Contains $release 'ilammy/msvc-dev-cmd@v1' 'Release build must initialize the MSVC toolchain used by the working launcher.'
@@ -55,6 +57,7 @@ Assert-NotContains $release 'zig cc' 'Release must not switch back to the GNU AB
 Assert-Contains $release 'Compress-Archive' 'Release should package the launcher so the exact spaced EXE filename is preserved.'
 Assert-Contains $release 'DeepSeek-Harness-Launcher.zip' 'Release archive should use a GitHub-safe filename.'
 Assert-Contains $release 'Launcher failed to start fake DSH on port 3080.' 'Release must smoke-test the real launcher startup path before publishing.'
+Assert-Contains $release 'Launcher startup must not create a cmd.exe child' 'Release must verify direct startup does not create the console wrapper that can flash.'
 Assert-NotContains $release '-lt 500KB' 'Release validation must not assume the legacy executable size.'
 
 Write-Host 'native tray tests passed.'

@@ -58,6 +58,7 @@ static wchar_t g_state_file[MAX_PATH];
 static wchar_t g_patch_file[MAX_PATH];
 static wchar_t g_node_path[MAX_PATH];
 static wchar_t g_dsh_command[MAX_PATH];
+static wchar_t g_dsh_script[MAX_PATH];
 static UINT g_taskbar_created;
 
 static void ShowBalloon(const wchar_t *title, const wchar_t *message, DWORD flags) {
@@ -193,6 +194,22 @@ static bool ResolveRuntime(void) {
                         wcsncpy_s(g_node_path, _countof(g_node_path), start + 1, length);
                         int major = 0, minor = 0, patch = 0;
                         if (IsCompatibleNode(g_node_path, &major, &minor, &patch)) {
+                            wchar_t *node_quote_end = wcschr(node_end, L'\"');
+                            if (node_quote_end) {
+                                wchar_t *script_start = wcschr(node_quote_end + 1, L'\"');
+                                if (script_start) {
+                                    wchar_t *script_end = wcschr(script_start + 1, L'\"');
+                                    if (script_end) {
+                                        size_t script_length = (size_t) (script_end - (script_start + 1));
+                                        if (script_length < _countof(g_dsh_script)) {
+                                            wcsncpy_s(g_dsh_script, _countof(g_dsh_script), script_start + 1, script_length);
+                                            if (GetFileAttributesW(g_dsh_script) == INVALID_FILE_ATTRIBUTES) {
+                                                g_dsh_script[0] = L'\0';
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             CloseHandle(wrapper);
                             return true;
                         }
@@ -502,11 +519,17 @@ static bool StartDsh(void) {
     }
 
     wchar_t comspec[MAX_PATH] = {0};
-    if (!GetEnvironmentVariableW(L"ComSpec", comspec, _countof(comspec))) {
-        wcscpy_s(comspec, _countof(comspec), L"C:\\Windows\\System32\\cmd.exe");
-    }
     wchar_t command[4096] = {0};
-    swprintf_s(command, _countof(command), L"\"%s\" /d /s /c \"\"%s\" web --patch \"%s\" --port %d --no-open\"", comspec, g_dsh_command, g_patch_file, DSH_PORT);
+    const wchar_t *application = g_node_path;
+    if (g_dsh_script[0]) {
+        swprintf_s(command, _countof(command), L"\"%s\" \"%s\" web --patch \"%s\" --port %d --no-open", g_node_path, g_dsh_script, g_patch_file, DSH_PORT);
+    } else {
+        if (!GetEnvironmentVariableW(L"ComSpec", comspec, _countof(comspec))) {
+            wcscpy_s(comspec, _countof(comspec), L"C:\\Windows\\System32\\cmd.exe");
+        }
+        application = comspec;
+        swprintf_s(command, _countof(command), L"\"%s\" /d /s /c \"\"%s\" web --patch \"%s\" --port %d --no-open\"", comspec, g_dsh_command, g_patch_file, DSH_PORT);
+    }
     STARTUPINFOW startup = {0};
     PROCESS_INFORMATION process = {0};
     startup.cb = sizeof(startup);
@@ -515,7 +538,7 @@ static bool StartDsh(void) {
     startup.hStdOutput = out;
     startup.hStdError = err;
     startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    BOOL started = CreateProcessW(comspec, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &startup, &process);
+    BOOL started = CreateProcessW(application, command, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &startup, &process);
     CloseHandle(out);
     CloseHandle(err);
     if (!started) {

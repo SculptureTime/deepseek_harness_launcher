@@ -61,6 +61,8 @@ jobs:
               } catch {}
             }
             if (-not $ready) { throw 'Launcher failed to start fake DSH on port 3080.' }
+            $cmdChild = Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $launcher.Id -and $_.Name -eq 'cmd.exe' }
+            if ($cmdChild) { throw 'Launcher startup must not create a cmd.exe child when dsh.cmd can be resolved directly.' }
           } finally {
             if (-not $launcher.HasExited) { Stop-Process -Id $launcher.Id -Force }
             Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*$fakeJs*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
