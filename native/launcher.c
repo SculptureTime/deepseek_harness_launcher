@@ -1,5 +1,6 @@
 #define _WIN32_WINNT 0x0A00
 #define WIN32_LEAN_AND_MEAN
+#define COBJMACROS
 
 #include <winsock2.h>
 #include <windows.h>
@@ -12,6 +13,20 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <wchar.h>
+#include <sddl.h>
+#include <taskschd.h>
+
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "oleaut32.lib")
+#pragma comment(lib, "taskschd.lib")
+
+#ifndef LOGIN_TASK_NAME
+#define LOGIN_TASK_NAME L"DeepSeek Harness Launcher (Elevated)"
+#endif
+#define LOGIN_TASK_QUERY 0
+#define LOGIN_TASK_ENABLE 1
+#define LOGIN_TASK_DISABLE 2
+#define LOGIN_TASK_QUERY_PATH 3
 
 #define IDI_APP_ICON 101
 #define WM_TRAYICON (WM_APP + 1)
@@ -611,7 +626,114 @@ static bool RestartDsh(void) {
     return StartDsh();
 }
 
+/** 查询、注册或删除当前用户的管理员登录启动任务。 */
+static bool UpdateLoginTask(int operation) {
+    HRESULT initialized = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(initialized)) return false;
+    HANDLE token = NULL;
+    BYTE user[512];
+    DWORD size = 0;
+    LPWSTR sid = NULL;
+    bool identity = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token);
+    if (identity) identity = GetTokenInformation(token, TokenUser, user, sizeof(user), &size) != FALSE;
+    if (identity) identity = ConvertSidToStringSidW(((TOKEN_USER *) user)->User.Sid, &sid) != FALSE;
+    if (token) CloseHandle(token);
+    if (!identity) {
+        CoUninitialize();
+        return false;
+    }
+    // 按用户 SID 隔离任务，避免多用户登录时覆盖彼此的自启设置。
+    wchar_t task_name[256] = {0};
+    swprintf_s(task_name, _countof(task_name), L"%s - %s", LOGIN_TASK_NAME, sid);
+    wchar_t exe[MAX_PATH] = {0};
+    DWORD length = GetModuleFileNameW(NULL, exe, _countof(exe));
+    ITaskService *service = NULL;
+    ITaskFolder *folder = NULL;
+    IRegisteredTask *task = NULL;
+    VARIANT empty;
+    VariantInit(&empty);
+    BSTR root = SysAllocString(L"\\");
+    BSTR name = SysAllocString(task_name);
+    HRESULT result = CoCreateInstance(&CLSID_TaskScheduler, NULL, CLSCTX_INPROC_SERVER, &IID_ITaskService, (void **) &service);
+    if (SUCCEEDED(result)) result = ITaskService_Connect(service, empty, empty, empty, empty);
+    if (SUCCEEDED(result)) result = ITaskService_GetFolder(service, root, &folder);
+    bool ok = false;
+    if (SUCCEEDED(result)) {
+        result = ITaskFolder_GetTask(folder, name, &task);
+        if (operation == LOGIN_TASK_QUERY || operation == LOGIN_TASK_QUERY_PATH) {
+            VARIANT_BOOL enabled = VARIANT_FALSE;
+            ok = SUCCEEDED(result) && SUCCEEDED(IRegisteredTask_get_Enabled(task, &enabled)) && enabled == VARIANT_TRUE;
+            if (ok && operation == LOGIN_TASK_QUERY_PATH) {
+                ITaskDefinition *definition = NULL;
+                IActionCollection *actions = NULL;
+                IAction *action = NULL;
+                IExecAction *exec = NULL;
+                BSTR path = NULL;
+                result = IRegisteredTask_get_Definition(task, &definition);
+                if (SUCCEEDED(result)) result = ITaskDefinition_get_Actions(definition, &actions);
+                if (SUCCEEDED(result)) result = IActionCollection_get_Item(actions, 1, &action);
+                if (SUCCEEDED(result)) result = IAction_QueryInterface(action, &IID_IExecAction, (void **) &exec);
+                if (SUCCEEDED(result)) result = IExecAction_get_Path(exec, &path);
+                ok = SUCCEEDED(result) && path && length && length < _countof(exe) && _wcsicmp(path, exe) == 0;
+                if (path) SysFreeString(path);
+                if (exec) IExecAction_Release(exec);
+                if (action) IAction_Release(action);
+                if (actions) IActionCollection_Release(actions);
+                if (definition) ITaskDefinition_Release(definition);
+            }
+        } else if (operation == LOGIN_TASK_DISABLE) {
+            ok = result == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND) || SUCCEEDED(ITaskFolder_DeleteTask(folder, name, 0));
+        } else {
+            wchar_t escaped[MAX_PATH * 6] = {0};
+            if (length && length < _countof(exe)) {
+                // XML 中的路径必须转义，保证含有 & 等字符的安装目录也能注册。
+                size_t end = 0;
+                for (DWORD i = 0; i < length; i++) {
+                    const wchar_t *entity = exe[i] == L'&' ? L"&amp;" : exe[i] == L'<' ? L"&lt;" : exe[i] == L'>' ? L"&gt;" : NULL;
+                    if (entity) {
+                        size_t count = wcslen(entity);
+                        wmemcpy(escaped + end, entity, count);
+                        end += count;
+                    } else escaped[end++] = exe[i];
+                }
+                wchar_t directory[MAX_PATH * 6] = {0};
+                wcscpy_s(directory, _countof(directory), escaped);
+                wchar_t *separator = wcsrchr(directory, L'\\');
+                if (separator) *separator = L'\0';
+                wchar_t xml[8192] = {0};
+                swprintf_s(xml, _countof(xml),
+                    L"<Task version=\"1.2\" xmlns=\"http://schemas.microsoft.com/windows/2004/02/mit/task\">"
+                    L"<Triggers><LogonTrigger><Enabled>true</Enabled><UserId>%s</UserId><Delay>PT10S</Delay></LogonTrigger></Triggers>"
+                    L"<Principals><Principal id=\"Launcher\"><UserId>%s</UserId><LogonType>InteractiveToken</LogonType>"
+                    L"<RunLevel>HighestAvailable</RunLevel></Principal></Principals>"
+                    L"<Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"
+                    L"<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><StartWhenAvailable>true</StartWhenAvailable>"
+                    L"<Enabled>true</Enabled><ExecutionTimeLimit>PT0S</ExecutionTimeLimit></Settings>"
+                    L"<Actions Context=\"Launcher\"><Exec><Command>%s</Command><WorkingDirectory>%s</WorkingDirectory></Exec></Actions></Task>",
+                    sid, sid, escaped, directory);
+                BSTR definition = SysAllocString(xml);
+                IRegisteredTask *registered = NULL;
+                // 先成功注册任务，再由调用方清理旧 Run 项，避免迁移失败丢失自启配置。
+                result = ITaskFolder_RegisterTask(folder, name, definition, TASK_CREATE_OR_UPDATE, empty, empty, TASK_LOGON_INTERACTIVE_TOKEN, empty, &registered);
+                ok = SUCCEEDED(result);
+                if (registered) IRegisteredTask_Release(registered);
+                SysFreeString(definition);
+            }
+        }
+    }
+    if (task) IRegisteredTask_Release(task);
+    if (folder) ITaskFolder_Release(folder);
+    if (service) ITaskService_Release(service);
+    SysFreeString(name);
+    SysFreeString(root);
+    LocalFree(sid);
+    CoUninitialize();
+    return ok;
+}
+
+/** 识别计划任务及历史注册表自启配置。 */
 static bool IsLaunchAtLoginEnabled(void) {
+    if (UpdateLoginTask(LOGIN_TASK_QUERY)) return true;
     HKEY key;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
         return false;
@@ -627,7 +749,25 @@ static bool IsLaunchAtLoginEnabled(void) {
     return result == ERROR_SUCCESS;
 }
 
+/** 管理员模式使用最高权限登录任务，普通模式沿用当前用户 Run 项。 */
 static bool SetLaunchAtLogin(bool enabled) {
+    HANDLE token = NULL;
+    TOKEN_ELEVATION elevation = {0};
+    DWORD size = 0;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+        CloseHandle(token);
+    }
+    if (!enabled) {
+        if (!UpdateLoginTask(LOGIN_TASK_DISABLE)) return false;
+    } else if (elevation.TokenIsElevated) {
+        if (!UpdateLoginTask(LOGIN_TASK_ENABLE)) return false;
+        enabled = false;
+    } else if (UpdateLoginTask(LOGIN_TASK_QUERY)) {
+        // 普通实例保留匹配的管理员任务，只清理旧 Run 项，不尝试重新提权注册。
+        if (!UpdateLoginTask(LOGIN_TASK_QUERY_PATH)) return false;
+        enabled = false;
+    }
     HKEY key;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, NULL, 0, KEY_SET_VALUE, NULL, &key, NULL) != ERROR_SUCCESS) {
         return false;
@@ -1052,6 +1192,8 @@ static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPAR
                     bool enabled = !IsLaunchAtLoginEnabled();
                     if (SetLaunchAtLogin(enabled)) {
                         ShowBalloon(APP_NAME, enabled ? L"已开启开机自动启动。" : L"已关闭开机自动启动。", NIIF_INFO);
+                    } else {
+                        MessageBoxW(g_hwnd, L"无法更新开机自启设置。管理员自启请以管理员身份运行后重试。", APP_NAME, MB_OK | MB_ICONERROR);
                     }
                     break;
                 }

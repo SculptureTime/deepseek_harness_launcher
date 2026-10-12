@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
 
 jobs:
@@ -26,3 +26,20 @@ jobs:
           cd native
           rc /nologo /fo launcher.res launcher.rc
           cl /nologo /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" launcher.c launcher.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib user32.lib
+
+      - name: Test elevated autostart
+        shell: pwsh
+        run: |
+          $testDir = Join-Path $env:RUNNER_TEMP 'launcher autostart & test'
+          New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+          $testExe = Join-Path $testDir 'autostart.tests.exe'
+          & cl /nologo /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE "/Fe:$testExe" "/Fo:$testDir\autostart.tests.obj" tests\autostart.tests.c /link ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib user32.lib
+          if ($LASTEXITCODE -ne 0) { throw 'Autostart test compilation failed.' }
+          .\tests\autostart.integration.ps1 -TestExe $testExe
+
+      - name: Upload launcher
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepSeek-Harness-Launcher
+          path: DeepSeek Harness Launcher.exe
+          retention-days: 7

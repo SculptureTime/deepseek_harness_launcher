@@ -27,7 +27,7 @@ DeepSeek Harness Web 的 Windows 原生启动器。单 EXE 运行，无需安装
 - 自动选择兼容的 Node.js
 - 自动读取 Windows 当前代理设置并传递给 DSH 子进程
 - 拦截并隐藏 DSH 及其插件（如 agy / Antigravity）子进程新建的控制台窗口（仅限本进程树）
-- 支持开机自启动，并自动迁移旧的注册表启动项名称
+- 支持登录自启动：管理员运行时使用最高权限计划任务，普通运行时使用当前用户注册表；托盘开关统一识别和关闭两种方式
 
 ## 下载
 
@@ -85,6 +85,12 @@ Launcher 会自动常驻系统托盘。
 - DSH 尚未运行：启动 DSH，等待服务真正可用后打开浏览器
 - Launcher 已经运行：不会再启动第二个托盘实例，而是通知现有实例处理
 
+### 管理员自启
+
+需要管理员权限时，以管理员身份运行 Launcher，再开启托盘菜单中的“开机自动启动”。Launcher 会注册当前用户登录后延迟 10 秒、以最高权限运行的计划任务，无需手动配置任务计划程序。已有注册表自启会在任务注册成功后自动迁移；关闭自启会同时清理计划任务和注册表启动项。
+
+普通权限运行仍使用注册表自启。若已配置管理员自启，修改或关闭该设置也需要管理员权限，失败时会显示提示。
+
 ## 状态与日志
 
 默认 DSH Web 端口：
@@ -139,7 +145,7 @@ rc /nologo /fo launcher.res launcher.rc
 cl /nologo /W4 /O2 /MT /utf-8 /DUNICODE /D_UNICODE /Fe:"..\DeepSeek Harness Launcher.exe" launcher.c launcher.res /link /SUBSYSTEM:WINDOWS ws2_32.lib shell32.lib advapi32.lib iphlpapi.lib user32.lib
 ```
 
-正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.16`。
+正式 Release 使用源码中的 Windows 版本资源生成，当前版本为 `1.0.17`。
 
 ## License
 
