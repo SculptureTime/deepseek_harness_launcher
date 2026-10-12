@@ -24,7 +24,9 @@ try {
     if ($task.Settings.ExecutionTimeLimit -ne 'PT0S') { throw 'Autostart must not have an execution time limit.' }
     if ($task.Settings.DisallowStartIfOnBatteries -or $task.Settings.StopIfGoingOnBatteries) { throw 'Autostart must work on battery power.' }
     if ($task.Triggers.Delay -ne 'PT10S') { throw 'Autostart must allow the desktop to initialise before launching.' }
-    if ($task.Triggers.UserId -ne $sid) { throw 'Autostart must only trigger for the current user.' }
+    $triggerUser = $task.Triggers.UserId
+    $triggerSid = if ($triggerUser -like 'S-1-*') { $triggerUser } else { [Security.Principal.NTAccount]::new($triggerUser).Translate([Security.Principal.SecurityIdentifier]).Value }
+    if ($triggerSid -ne $sid) { throw 'Autostart must only trigger for the current user.' }
 
     $otherAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\notepad.exe"
     Set-ScheduledTask -TaskName $taskName -Action $otherAction | Out-Null
@@ -46,3 +48,4 @@ try {
 } finally {
     if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false }
 }
+$global:LASTEXITCODE = 0
